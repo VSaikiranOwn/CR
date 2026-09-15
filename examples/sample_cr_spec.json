@@ -1,0 +1,329 @@
+{
+  "meta": {
+    "cr_name": "Seamless Lodgment - Post Lodgment Withdrawal & ELS Cost API",
+    "source": "Reproduced from CR_Estimation_Framework_Final_ver_2.xlsx",
+    "note": "Regression fixture: building this spec must reproduce Dev 31 MD / Total 47 MD."
+  },
+  "stories": [
+    {
+      "epic": "Seamless Lodgment",
+      "us_id": "SLADCYBQSK-42132",
+      "us_summary": "Post Lodgment: Withdrawal",
+      "scope": {
+        "user_interaction": {
+          "size": "Medium (4-6)",
+          "details": "Withdraw\n1. Allow user to Withdraw instrument(s)\n2. Allow user to Confirm for Withdrawal before user can proceed to 'Withdraw'\nCopy\n3. Allow user to Copy instrument(s)\n4. Allow user to Confirm for Copy before user can proceed to 'Copy'"
+        },
+        "pages": {
+          "size": "Small (1-3)",
+          "details": "1. Legal Instruments tab\n2. Lodgement Form\n"
+        },
+        "integration": {
+          "size": "Small (1-3)",
+          "details": "1. Webhook Status Update Api\n2. Withdraw Lodgment API"
+        }
+      },
+      "reusability": {
+        "frontend": {
+          "level": "1 - Low Reusability",
+          "details": "Lodgment Form enhancement: per-instrument Withdraw action link (for Submitted/Objected), row checkboxes with a conditional multi-select Withdraw button (appears at ≥2 selected), confirm popup, success toast, and greyed-out link/checkbox with a \"withdrawal in progress\" tooltip.\nCopy Instrument action link on Withdrawn rows → confirm popup → navigate to the (existing) pre-filled Create Instrument page.\nConcurrent-access error popup (\"instrument currently in use…\") with an Ok button on both Withdraw and Copy."
+        },
+        "backend": {
+          "level": "2 - Moderate Reusability",
+          "details": "New Withdraw endpoint POST /lodgement/{lodgementId}/withdraw — eligibility guards, orchestration, persist withdrawal rows after ELS success.\nNew Copy endpoint POST /legal-instrument/{instrumentId}/copy — deep-copy the instrument aggregate into a fresh PREPARATION draft.\nNew ElsWithdrawFacade (SigV4 + Resilience4j CB/retry) calling ELS directly.\nNew webhook handler — add"
+        },
+        "interface": {
+          "level": "4 - High Reusability",
+          "details": "Outbound (new): POST {ELS}/api/v2/withdraw-lodgement with SigV4 + agency-law-firm / agency-user-id headers; body carries lodgerAcct, lodgmentNo, instrumentList[]; returns a requestId.\nInbound (extended): existing status-update webhook now handles updateType = \"Withdrawal\" (per-instrument Approved/NotApproved + reasons) plus the combined lodgmentUpdate for status transitions."
+        },
+        "database": {
+          "level": "1 - Low Reusability",
+          "details": "One new table InstrumentWithdrawal (instrument-level: instrument id, lodgment no, lodger acct, ELS requestId, status, reason, status datetime; unique-active-per-instrument).\nNew CodeTable master data: lodgment status REQUEST_FOR_WITHDRAW; withdrawal statuses REQUESTED/APPROVED/NOT_APPROVED; audit action types WITHDRAW_REQUEST/WITHDRAW_STATUS_UPDATE/COPY_INSTRUMENT."
+        },
+        "qa": {
+          "level": "2 - Moderate Reusability",
+          "details": "New test cases for the withdrawal feature and the copy instrument"
+        }
+      }
+    },
+    {
+      "epic": "Seamless Lodgment",
+      "us_id": "SLADCYBQSK-42528",
+      "us_summary": "ELS Cost API Integration",
+      "scope": {
+        "user_interaction": {
+          "size": "Not Applicable",
+          "details": ""
+        },
+        "pages": {
+          "size": "Small (1-3)",
+          "details": "Lodgment Form"
+        },
+        "integration": {
+          "size": "Small (1-3)",
+          "details": "Cost API Integration"
+        }
+      },
+      "reusability": {
+        "frontend": {
+          "level": "4 - High Reusability",
+          "details": "Reuse existing screen"
+        },
+        "backend": {
+          "level": "4 - High Reusability",
+          "details": "New API endpoint integration and changes"
+        },
+        "interface": {
+          "level": "2 - Moderate Reusability",
+          "details": "New outbound API"
+        },
+        "database": {
+          "level": "2 - Moderate Reusability",
+          "details": "Two new columns are added under the instrument table"
+        },
+        "qa": {
+          "level": "2 - Moderate Reusability",
+          "details": "Need to right new test cases for the cost api negative scenarios and new popup message"
+        }
+      }
+    }
+  ],
+  "rows": [
+    {
+      "user_story": "SLADCYBQSK-42132",
+      "business_requirement": "AC1.1-AC1.3 (Withdraw flow) - On the Lodgment Form, view lodged instruments with per-instrument withdraw eligibility withdraw a single instrument via the Withdraw action link or multiple (>=2 selected) via the Withdraw button confirmation popup -> raise the withdrawal request to ELS -> success toast the Withdraw link + checkbox are greyed out with a 'withdrawal in progress' tooltip and no further withdrawal is allowed while pending.",
+      "technical_component": "UI (Medium)\nLodgment Form enhancement: per-instrument Withdraw action link (Submitted/Objected), \n1. Row checkboxes with a conditional multi-select Withdraw button (shown when >=2 selected, hiding the per-row links)\n2. Confirmation popup, success toast.\n3. Greyed link/checkbox + in-progress tooltip. \nReuses the existing Lodgment Form / Lodged Instruments layout.\nMS (Complex) - ms-legalinstrument\nNEW API: POST /api/ext/v1/lodgement/{lodgementId}/withdraw (WithdrawInstrumentOrchestrator) - eligibility guards (lodgment SUBMITTED instrument Submitted/Objected/Accepted/Instrument-with-error not already pending lodging firm only BR5 not suspended BR4), resolve ELS instrument numbers, persist InstrumentWithdrawal rows only after ELS success.\nNEW outbound: POST {ELS}/api/v2/withdraw-lodgement via NEW ElsWithdrawFacade (SigV4 headers agency-law-firm/agency-user-id Resilience4j CB+retry).\nEXISTING to MODIFY: lodgement/dashboard read API - expose per-instrument withdrawable + withdrawalPending flags.",
+      "ui": [
+        0,
+        1,
+        0
+      ],
+      "ms": [
+        0,
+        0,
+        1
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "user_story": "SLADCYBQSK-42132",
+      "business_requirement": "AC1.4 (ELS status sync) - Once DCP receives a status update from ELS, the lodgment status and the instrument status are updated and displayed in the Lodged Instruments section, reflecting the per-instrument withdrawal outcome (Approved / NotApproved with reason).",
+      "technical_component": "MS (Medium) - ms-legalinstrument\nNEW webhook route: add updateType=Withdrawal to ElsWebhookUpdateType + NEW WithdrawalUpdateHandler (registered in the existing StatusUpdateHandlerRegistry) - match InstrumentWithdrawal by requestId + instrumentNumber and set APPROVED / NOT_APPROVED + reasonCode/description/statusDateTime.\nEXISTING to REUSE/CHECK: POST /api/ext/v1/legal-instrument/webhook/status-update (StatusUpdateOrchestrator) idempotency via x-request-id the existing LodgmentUpdateHandler applies the combined lodgmentUpdate in the same payload (Instrument -> Withdrawn/Registered Lodgement -> REQUEST_FOR_WITHDRAW / Withdrawn).",
+      "ui": [
+        0,
+        0,
+        0
+      ],
+      "ms": [
+        0,
+        1,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "user_story": "SLADCYBQSK-42132",
+      "business_requirement": "AC1.5 / AC1.5.1 (Copy Instrument) - For instruments with Lodgment Status = Withdrawn, expose a Copy Instrument action on confirm, open the Create Instrument page pre-filled with all details from the withdrawn instrument the user can Save as Draft and proceed to create and re-lodge (existing flow).",
+      "technical_component": "UI (Simple)\nCopy Instrument action link on Withdrawn rows + confirmation popup + navigation to the (existing) Create Instrument page pre-filled from the copy regression of the existing create/draft/lodge flow.\nMS (Complex) - ms-legalinstrument\nNEW API: POST /api/ext/v1/legal-instrument/{instrumentId}/copy (CopyInstrumentService) - deep-copy InstrumentJson + child rows (InstrumentProfile, LandDescription, InstrumentSigning, ShareInLand, InstrumentCertification) into a new PREPARATION instrument (new id, cleared number/version/errors) and capture copy lineage (source instrument id + number).\nEXISTING to REUSE: create/draft persistence + validation and the Create Instrument page.",
+      "ui": [
+        1,
+        0,
+        0
+      ],
+      "ms": [
+        0,
+        1,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "user_story": "SLADCYBQSK-42132",
+      "business_requirement": "AC1.6 / AC1.7 (Concurrent access) - When another user from the same law firm acts on the same instrument's Withdraw or Copy CTA, show 'The instrument is currently in use by another user. Please try again later.' with an Ok button (Withdraw -> user stays on the Lodgment form Copy -> user is returned to the Legal Instruments tab).",
+      "technical_component": "MS (Simple) - ms-legalinstrument\nIntegrate the EXISTING Resource-Manager concurrency-lock framework into the withdraw + copy endpoints and map the in-use condition to the standard concurrent-access (409) error.\nUI (Simple)\nConcurrent-access error popup with an Ok button on both the Withdraw and Copy actions, with the correct post-Ok navigation per AC.\n[Assumption: the lock framework already exists (SLADCYBQSK-23403) - integration only, not designed here.]",
+      "ui": [
+        1,
+        0,
+        0
+      ],
+      "ms": [
+        1,
+        0,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "user_story": "Shared",
+      "business_requirement": "Cross-cutting data model, master data, audit trail and access control supporting the withdrawal and copy features (BR2 access matrix, BR5 lodging-firm-only, BR6 audit).",
+      "technical_component": "DB (Complex) - Lodgement schema (executed manually by DBA)\nNEW table Lodgement.InstrumentWithdrawal (instrument-level: IWInstrumentId, IWLodgementId, IWInstrumentNumber, IWLodgmentFormId, IWLodgerAccountId, IWElsRequestId, IWWithdrawalStatusId, reason, status datetime unique-active-per-instrument).\nALTER Lodgement.Instrument - add nullable copy-lineage columns InstrumentCopiedFromId + InstrumentCopiedFromNumber (approach B).\nNEW CodeTable master data: LodgementStatus REQUEST_FOR_WITHDRAW WithdrawalStatus REQUESTED/APPROVED/NOT_APPROVED InstrumentActionType WITHDRAW_REQUEST / WITHDRAW_STATUS_UPDATE / COPY_INSTRUMENT.\n[TBD: confirm whether a V_InstrumentWithdrawal read view is required per the read/write split convention.]\nMS (Simple) - ms-legalinstrument\nAudit: new InstrumentAuditEvent factory methods -> InstrumentHistory for WITHDRAW_REQUEST / WITHDRAW_STATUS_UPDATE / COPY_INSTRUMENT (async listener handles all types). \nAccess control: @PreAuthorize (Access Matrix BR2 + lodging-firm-only BR5).",
+      "ui": [
+        0,
+        0,
+        0
+      ],
+      "ms": [
+        1,
+        0,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        1
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "user_story": "COST-CALC-P1",
+      "business_requirement": "TAC-1/2/5 - Real-time ELS cost at Prepare Lodgement: call ELS calculate-fee (batched) using the lodger-account headers, expose a cache-first per-instrument fee endpoint, compute per-instrument total (fee+gst) and the lodgement grand total, and display them in the Prepare Lodgement popup.",
+      "technical_component": "MS (Complex) - ms-legalinstrument\nNEW API: POST /api/ext/v1/lodgement/instrument-fee (InstrumentFeeService) - cache-first (reuse stored fee), batch-call ELS only for misses, compute totals.\nNEW outbound: POST {ELS}/api/v2/calculate-fee via NEW ElsCalculateFeeFacade + ElsCalculateFeeClient (SigV4 + agency-law-firm/agency-user-id headers, Resilience4j CB+retry).\nEXISTING to REUSE: LodgerAccountService (header values) NEW FeeAmountParser (comma-string -> BigDecimal, no rounding).\n",
+      "ui": [
+        0,
+        0,
+        0
+      ],
+      "ms": [
+        0,
+        1,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ],
+      "group": "COST-CALC-P1"
+    },
+    {
+      "user_story": "COST-CALC-P1",
+      "business_requirement": "TAC-3/4/6 - Persist fee+GST on the instrument (frozen once captured), invalidate & recalculate on instrument edit/re-submit, and derive the submit-time LodgementAmount from the stored instrument fees.",
+      "technical_component": "MS (Medium) - ms-legalinstrument\nPersist InstrumentEstimatedFee + InstrumentGst on ELS success (freeze) reuse when already present.\nEXISTING to MODIFY: draft edit + submit-to-ELS persistence - clear stored fee/GST on edit/re-submit (new InstrumentNumber/version).\nEXISTING to MODIFY: POST /api/ext/v1/lodgement/submit-lodgement (LodgmentSyncServiceImpl) - LodgementAmount = sum(stored fee+gst) carried via the existing lodgment-sync payload (no new ELS field).\n",
+      "ui": [
+        0,
+        0,
+        0
+      ],
+      "ms": [
+        0,
+        1,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ],
+      "group": "COST-CALC-P1"
+    },
+    {
+      "user_story": "COST-CALC-P1",
+      "business_requirement": "TAC-7 - Fallback & error handling: config instrumentPrice fallback when ELS is unavailable (and, pending Jerry's approval, on Instrument_Number_Not_Found) block the Prepare Lodgement screen on ELS 422 or when no cost can be determined.",
+      "technical_component": "MS (Simple) - ms-legalinstrument\nFallback branch to config instrumentPrice (GST null) on ELS 5xx/timeout/CB-open block path on 422 / no-cost.\n[Highlighted: Instrument_Number_Not_Found -> config fallback is pending Jerry's approval may change to block.]",
+      "ui": [
+        0,
+        0,
+        0
+      ],
+      "ms": [
+        1,
+        0,
+        0
+      ],
+      "db": [
+        0,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ],
+      "group": "COST-CALC-P1"
+    },
+    {
+      "user_story": "Shared",
+      "business_requirement": "TAC-3 (data model) / TAC-8 - Add fee columns to the instrument, expose them in the read view, and retain the config price as fallback.",
+      "technical_component": "DB (Simple) - Lodgement schema (executed manually by DBA)\nALTER Lodgement.Instrument - add InstrumentEstimatedFee, InstrumentGst (DECIMAL(15,2), nullable) expose both in V_Instrument. No master-data / CodeTable changes.\nMS (Simple) - ms-legalinstrument\nMap the 2 columns on the instrument entity / write path retain InstrumentConfig.instrumentPrice as fallback (ExcessPriceNotification unchanged).",
+      "ui": [
+        0,
+        0,
+        0
+      ],
+      "ms": [
+        0,
+        0,
+        0
+      ],
+      "db": [
+        3,
+        0,
+        0
+      ],
+      "bpm": [
+        0,
+        0,
+        0
+      ],
+      "group": "COST-CALC-P1"
+    }
+  ],
+  "summary": {
+    "original_efforts": {
+      "development": 38,
+      "qa": 15,
+      "req_design": 11
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "//": "Copy to <KEY>_cr_spec.json and replace the contents. Delete the // help keys. Validate with: cr-tool validate <spec>",
+  "//stories": "One entry per Jira user story -> one row on the 'Tender Story Points' sheet. size: S/M/L/NA. level: 0/1/2/4/NA. Always fill 'details' - it is the evidence for the score.",
+  "//rows": "One entry per AC group -> one row on the 'Details' sheet. Keep 1-3 component flags per row so each row lands in the 1-10 MD band. Weights: UI/MS/BPM Simple 1.5, Medium 3, Complex 5; DB Simple 0.25, Medium 0.5, Complex 1.",
+  "//shared": "Add a 'Shared' row per story group only for genuine cross-cutting work (schema change, master data, audit, access control, BPM coordination).",
+
+  "meta": {
+    "cr_name": "<CR or epic name>"
+  },
+
+  "stories": [
+    {
+      "epic": "<Epic name>",
+      "us_id": "<JIRA-KEY>",
+      "us_summary": "<one-line story summary>",
+      "scope": {
+        "user_interaction": {
+          "size": "M",
+          "details": "1. <interaction>\n2. <interaction>\n3. <interaction>\n4. <interaction>"
+        },
+        "pages": {
+          "size": "S",
+          "details": "1. <screen>\n2. <screen>"
+        },
+        "integration": {
+          "size": "S",
+          "details": "1. <external API>\n2. <webhook>"
+        }
+      },
+      "reusability": {
+        "frontend": { "level": "1", "details": "<what must be built vs adapted>" },
+        "backend": { "level": "2", "details": "<what must be built vs adapted>" },
+        "interface": { "level": "4", "details": "<new vs reused endpoints>" },
+        "database": { "level": "1", "details": "<new tables / columns / master data>" },
+        "qa": { "level": "2", "details": "<new vs reusable test cases>" }
+      }
+    }
+  ],
+
+  "rows": [
+    {
+      "user_story": "<JIRA-KEY>",
+      "business_requirement": "AC1.1-AC1.3 (<flow name>) - <what the ACs require, in prose>",
+      "technical_component": "UI (Medium)\n<screen / flow work>\nMS (Complex) - ms-<service>\nNEW API: POST /api/... (<SomeService>) - <logic>\nEXISTING to MODIFY: <endpoint> (<Service>) - <change>\nBPM: none.",
+      "ui": [0, 1, 0],
+      "ms": [0, 0, 1],
+      "db": [0, 0, 0],
+      "bpm": [0, 0, 0]
+    },
+    {
+      "user_story": "Shared",
+      "business_requirement": "Cross-cutting data model, master data, audit trail and access control supporting the above.",
+      "technical_component": "DB (Complex) - <schema> (executed manually by DBA)\nNEW table <Name> (<columns>).\nNEW CodeTable master data: <values>.\nMS (Simple) - ms-<service>\nAudit: <action types>.\nAccess control: @PreAuthorize (<access matrix ref>).",
+      "ui": [0, 0, 0],
+      "ms": [1, 0, 0],
+      "db": [0, 0, 1],
+      "bpm": [0, 0, 0]
+    }
+  ],
+
+  "//summary": "Optional. Add a prior estimate to show side by side in the Summary 'Original Efforts' column, e.g. \"summary\": { \"original_efforts\": { \"development\": 38, \"qa\": 15, \"req_design\": 11 } }"
+}
