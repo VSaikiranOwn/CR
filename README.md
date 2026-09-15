@@ -16,6 +16,9 @@ inputs/                                       output/
 the middle is the reviewable artefact: if a number looks wrong, you fix the spec
 and rebuild, you never touch the workbook.
 
+**New here? Read [QUICKSTART.md](QUICKSTART.md)** — where to clone, where your CR
+files go, and how to drive it from Copilot, step by step.
+
 ---
 
 ## Install
@@ -114,6 +117,7 @@ TSP                      = (FU adj + Req & Design Unit) × 1.16
 ## Repository layout
 
 ```
+QUICKSTART.md                   start here: setup and the per-CR workflow
 .github/
   copilot-instructions.md       repo-wide rules Copilot loads automatically
   prompts/generate-cr.prompt.md the /generate-cr workflow
