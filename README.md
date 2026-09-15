@@ -16,6 +16,14 @@ inputs/                                       output/
 the middle is the reviewable artefact: if a number looks wrong, you fix the spec
 and rebuild, you never touch the workbook.
 
+Two ways to run it:
+
+- **Standalone** — you drive it from GitHub Copilot with a folder of Figma
+  exports, stories, HLD and LLD. Start at [QUICKSTART.md](QUICKSTART.md).
+- **Inside the DCP AI harness** — `/cr-estimate` becomes a design-agent skill
+  that derives the CR from the batch's own `02-design/` artifacts, with an
+  evidence trail. See [harness/INSTALL.md](harness/INSTALL.md).
+
 **New here? Read [QUICKSTART.md](QUICKSTART.md)** — where to clone, where your CR
 files go, and how to drive it from Copilot, step by step.
 
@@ -132,7 +140,10 @@ examples/
 templates/
   cr_framework_template.xlsx    the blank framework — never edit by hand
 src/cr_tool/                    constants, spec, compute, render, verify, cli
+harness/                        drop-in for the DCP AI harness (skill + validator)
+src/cr_harness/                 parses batch artifacts, derives the spec + evidence
 tools/build_template.py         re-derive the template from a filled workbook
+tools/build_harness_bundle.py   assemble the harness drop-in
 tests/                          81 tests pinning the arithmetic and the output
 ```
 

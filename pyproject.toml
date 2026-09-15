@@ -16,6 +16,7 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 cr-tool = "cr_tool.cli:main"
+cr-estimate = "cr_harness.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
