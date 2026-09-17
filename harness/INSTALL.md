@@ -11,23 +11,33 @@ have. No existing skill, agent or stage changes behaviour.
 Assuming the harness workspace is `C:\Microservices\Workspace\aiv2` — adjust
 `$Aiv2` if yours differs.
 
+Run these **one line at a time**. Every path is quoted, because
+`$env:TEMP\cr-tool` unquoted and without a command in front of it is a
+PowerShell expression, not a path, and fails with
+`Unexpected token '\cr-tool' in expression or statement`.
+
 ```powershell
-$Aiv2 = "C:\Microservices\Workspace\aiv2"
-
-# 1. get the bundle (anywhere outside the harness)
-git clone https://github.com/VSaikiranOwn/CR.git $env:TEMP\cr-tool
-cd $env:TEMP\cr-tool
+# 1. clone the tool OUTSIDE the harness workspace, so VS Code does not index it
+git clone https://github.com/VSaikiranOwn/CR.git "$env:TEMP\cr-tool"
+cd "$env:TEMP\cr-tool"
 git checkout claude/cr-generation-utility-s8sfrz
+```
 
+```powershell
 # 2. copy the skill and the validator in
-Copy-Item -Recurse -Force harness\bundle\skills\cr-estimate "$Aiv2\.github\skills\"
-Copy-Item -Force harness\bundle\validators\cr_complete.py "$Aiv2\.github\validators\"
+$Aiv2 = "C:\Microservices\Workspace\aiv2"
+Copy-Item -Recurse -Force ".\harness\bundle\skills\cr-estimate" "$Aiv2\.github\skills\"
+Copy-Item -Force ".\harness\bundle\validators\cr_complete.py" "$Aiv2\.github\validators\"
+```
 
-# 3. dependency (skip if openpyxl is already installed)
+```powershell
+# 3. the one dependency
 pip install openpyxl
+```
 
+```powershell
 # 4. smoke test against a batch that already has a WBS
-cd $Aiv2
+cd "$Aiv2"
 python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\<batch-id> --dry-run
 ```
 
@@ -35,8 +45,13 @@ Then make the three edits in section 3 below, and you are done. Per batch after
 that it is one command, or `/cr-estimate` in Copilot Chat with `design-agent`
 selected.
 
-> Use `python` or `python3`, whichever your harness already uses for
-> `run-all.py`.
+> **If you already cloned it** (for example into `aiv2\CR`), skip step 1 — `cd`
+> into that folder, run `git checkout claude/cr-generation-utility-s8sfrz` and
+> `git pull`, then carry on from step 2. A clone inside `aiv2` works fine but
+> shows up in VS Code search; delete or move it once the copy is done.
+
+> **Which python?** Try `python`. If that opens the Microsoft Store, use `py`
+> instead. Whatever your harness already uses for `run-all.py` is the right one.
 
 ---
 
