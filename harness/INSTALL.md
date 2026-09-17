@@ -8,50 +8,66 @@ have. No existing skill, agent or stage changes behaviour.
 
 ## Quickstart (Windows / PowerShell)
 
-Assuming the harness workspace is `C:\Microservices\Workspace\aiv2` — adjust
-`$Aiv2` if yours differs.
+Assuming the harness workspace is `C:\Microservices\Workspace\aiv2` — swap in
+your own path if it differs.
 
-Run these **one line at a time**. Every path is quoted, because
-`$env:TEMP\cr-tool` unquoted and without a command in front of it is a
-PowerShell expression, not a path, and fails with
-`Unexpected token '\cr-tool' in expression or statement`.
+### The one-command way
+
+If the terminal is eating characters off pasted lines, this is one line with no
+shell variables to lose:
 
 ```powershell
-# 1. clone the tool OUTSIDE the harness workspace, so VS Code does not index it
-git clone https://github.com/VSaikiranOwn/CR.git "$env:TEMP\cr-tool"
-cd "$env:TEMP\cr-tool"
+.\harness\Install-CrEstimate.ps1 -HarnessRoot "C:\Microservices\Workspace\aiv2" -Batch 41000
+```
+
+Run it from the root of this cloned repo. It checks the bundle is present and
+the target really is the harness, copies both paths, makes sure `openpyxl` is
+installed, and (with `-Batch`) runs a dry-run estimate as a smoke test.
+
+If PowerShell refuses to run it: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`,
+or run `powershell -ExecutionPolicy Bypass -File .\harness\Install-CrEstimate.ps1 -HarnessRoot "C:\Microservices\Workspace\aiv2"`.
+
+### The manual way
+
+Absolute paths, no variables, one command per line — nothing breaks if the
+first characters of a paste go missing:
+
+```powershell
+git clone https://github.com/VSaikiranOwn/CR.git "C:\temp\cr-tool"
+```
+```powershell
+cd "C:\temp\cr-tool"
+```
+```powershell
 git checkout claude/cr-generation-utility-s8sfrz
 ```
-
 ```powershell
-# 2. copy the skill and the validator in
-$Aiv2 = "C:\Microservices\Workspace\aiv2"
-Copy-Item -Recurse -Force ".\harness\bundle\skills\cr-estimate" "$Aiv2\.github\skills\"
-Copy-Item -Force ".\harness\bundle\validators\cr_complete.py" "$Aiv2\.github\validators\"
+Copy-Item -Recurse -Force "C:\temp\cr-tool\harness\bundle\skills\cr-estimate" "C:\Microservices\Workspace\aiv2\.github\skills\"
 ```
-
 ```powershell
-# 3. the one dependency
+Copy-Item -Force "C:\temp\cr-tool\harness\bundle\validators\cr_complete.py" "C:\Microservices\Workspace\aiv2\.github\validators\"
+```
+```powershell
 pip install openpyxl
 ```
-
 ```powershell
-# 4. smoke test against a batch that already has a WBS
-cd "$Aiv2"
-python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\<batch-id> --dry-run
+cd "C:\Microservices\Workspace\aiv2"
+```
+```powershell
+python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\41000 --dry-run
 ```
 
 Then make the three edits in section 3 below, and you are done. Per batch after
 that it is one command, or `/cr-estimate` in Copilot Chat with `design-agent`
 selected.
 
-> **If you already cloned it** (for example into `aiv2\CR`), skip step 1 — `cd`
-> into that folder, run `git checkout claude/cr-generation-utility-s8sfrz` and
-> `git pull`, then carry on from step 2. A clone inside `aiv2` works fine but
-> shows up in VS Code search; delete or move it once the copy is done.
+> **If you already cloned it** (for example into `aiv2\CR`), skip the clone —
+> `cd` into that folder, run `git checkout claude/cr-generation-utility-s8sfrz`,
+> then use its path in the two `Copy-Item` lines. A clone inside `aiv2` works
+> but shows up in VS Code search; delete it once the copy is done.
 
-> **Which python?** Try `python`. If that opens the Microsoft Store, use `py`
-> instead. Whatever your harness already uses for `run-all.py` is the right one.
+> **Which python?** Try `python`. If it opens the Microsoft Store, use `py`.
+> Whatever your harness already uses for `run-all.py` is the right one.
 
 ---
 
