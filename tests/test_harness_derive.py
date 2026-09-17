@@ -309,3 +309,66 @@ class TestLldOnlyMode:
         derivation = derive(load_workspace(FIXTURE_41000), use_wbs=True)
         assert derivation.mode == "lld"
         assert any("falling back" in note for note in derivation.notes)
+
+
+class TestDoctor:
+    def run(self, workspace):
+        import subprocess, sys
+        return subprocess.run(
+            [sys.executable, "-c",
+             "import sys;sys.path.insert(0,'src');from cr_harness.cli import main;"
+             "sys.exit(main(['doctor', sys.argv[1]]))", str(workspace)],
+            capture_output=True, text=True)
+
+    def test_reports_a_clean_batch(self):
+        result = self.run(FIXTURE_41000)
+        assert result.returncode == 0
+        assert "Every AC has Impact Analysis rows" in result.stdout
+        assert "versions/lld-v4.md" in result.stdout
+
+    def test_names_the_acs_it_found(self):
+        assert "AC-7.1" in self.run(FIXTURE_41000).stdout
+
+    def test_flags_acs_with_no_lld_section(self, tmp_path):
+        import shutil
+        batch = tmp_path / "b"
+        shutil.copytree(FIXTURE_41000, batch)
+        # Blank the LLD so every AC loses its section.
+        (batch / "02-design" / "versions" / "lld-v4.md").write_text(
+            "# Low-Level Design\n\n**Story:** SLADCYBQSK-41000: x\n")
+        output = self.run(batch).stdout
+        assert "MISSING" in output
+        assert "fall back" in output
+
+    def test_explains_what_the_parser_expects(self, tmp_path):
+        import shutil
+        batch = tmp_path / "b"
+        shutil.copytree(FIXTURE_41000, batch)
+        (batch / "02-design" / "versions" / "lld-v4.md").write_text("# empty\n")
+        assert "## AC-1: <title>" in self.run(batch).stdout
+
+    def test_fails_when_requirements_yield_nothing(self, tmp_path):
+        (tmp_path / "01-requirements").mkdir()
+        result = self.run(tmp_path)
+        assert result.returncode == 1
+        assert "no tickets or ACs" in result.stdout
+
+
+class TestDryRunMessaging:
+    def test_a_dry_run_says_loudly_that_nothing_was_written(self, capsys):
+        from cr_harness.cli import main
+        main(["run", FIXTURE_41000, "--dry-run"])
+        out = capsys.readouterr().out
+        assert "DRY RUN" in out and "no files were written" in out
+        assert "without --dry-run" in out
+
+    def test_a_real_run_does_not_claim_to_be_a_dry_run(self, tmp_path, capsys):
+        import shutil
+        from cr_harness.cli import main
+        batch = tmp_path / "b"
+        shutil.copytree(FIXTURE_41000, batch)
+        main(["run", str(batch)])
+        out = capsys.readouterr().out
+        assert "DRY RUN" not in out
+        assert (batch / "02-design" / "cr").is_dir()
+        assert list((batch / "02-design" / "cr").glob("*.xlsx"))

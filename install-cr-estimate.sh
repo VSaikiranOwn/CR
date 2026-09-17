@@ -90,19 +90,27 @@ fi
 # ------------------------------------------------------------- smoke test
 BATCH="${2:-}"
 if [ -n "$BATCH" ] && [ -n "$PY" ]; then
-    step "Smoke test on batch $BATCH"
+    step "Smoke test on batch $BATCH (dry run — writes nothing)"
     ( cd "$HARNESS" && "$PY" .github/skills/cr-estimate/scripts/cr_estimate.py \
         ".github/workspace/$BATCH" --dry-run )
 fi
 
 printf '\n=== Installed ===\n\n'
 cat <<EOF
-Next:
-  1. Make the three edits in harness/INSTALL.md section 3
-     (design.agent.md, docs/design.md, copilot-instructions.md)
-  2. Generate an estimate:
-       cd "$HARNESS"
-       ${PY:-python} .github/skills/cr-estimate/scripts/cr_estimate.py .github/workspace/41000
+Nothing has been generated yet — the smoke test above is a dry run.
 
-Output lands in .github/workspace/<batch>/02-design/cr/
+To actually WRITE the CR workbook:
+    cd "$HARNESS"
+    ${PY:-python} .github/skills/cr-estimate/scripts/cr_estimate.py .github/workspace/${BATCH:-<batch-id>}
+
+That creates three files in .github/workspace/${BATCH:-<batch-id>}/02-design/cr/
+    <batch>-CR-Estimation.xlsx   <- the deliverable, open it in Excel
+    cr-spec.json                 <- fix wrong numbers here, then re-run
+    cr-evidence.md               <- why each number is what it is
+
+If rows look flat at 2 MD, diagnose with:
+    ${PY:-python} .github/skills/cr-estimate/scripts/cr_estimate.py doctor .github/workspace/${BATCH:-<batch-id>}
+
+Then make the three edits in harness/INSTALL.md section 3
+(design.agent.md, docs/design.md, copilot-instructions.md).
 EOF

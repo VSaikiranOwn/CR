@@ -102,7 +102,7 @@ echo     OK   openpyxl available
 REM ------------------------------------------------------------ smoke test
 if "%~2"=="" goto :done
 echo.
-echo ==^> Smoke test on batch %~2
+echo ==^> Smoke test on batch %~2 ^(dry run, writes nothing^)
 pushd "%HARNESS%"
 "%PY%" ".github\skills\cr-estimate\scripts\cr_estimate.py" ".github\workspace\%~2" --dry-run
 popd
@@ -111,18 +111,25 @@ popd
 echo.
 echo === Installed ===
 echo.
-echo Next:
-echo   1. Make the three edits in harness\INSTALL.md section 3
-echo      ^(design.agent.md, docs\design.md, copilot-instructions.md^)
-echo   2. Generate an estimate:
-echo        cd /d "%HARNESS%"
+echo Nothing has been generated yet - the smoke test above is a dry run.
+echo.
+echo To actually WRITE the CR workbook:
+echo     cd /d "%HARNESS%"
 if defined PY (
-    echo        %PY% .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\41000
+    echo     %PY% .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\^<batch-id^>
 ) else (
-    echo        python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\41000
+    echo     python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\^<batch-id^>
 )
 echo.
-echo Output lands in .github\workspace\^<batch^>\02-design\cr\
+echo That creates three files in .github\workspace\^<batch-id^>\02-design\cr\
+echo     ^<batch^>-CR-Estimation.xlsx   ^<- the deliverable, open it in Excel
+echo     cr-spec.json                 ^<- fix wrong numbers here, then re-run
+echo     cr-evidence.md               ^<- why each number is what it is
+echo.
+echo If rows look flat at 2 MD, diagnose with:
+echo     python .github\skills\cr-estimate\scripts\cr_estimate.py doctor .github\workspace\^<batch-id^>
+echo.
+echo Then make the three edits in harness\INSTALL.md section 3.
 echo.
 if not defined CI pause
 exit /b 0

@@ -105,7 +105,77 @@ def _report(workspace, derivation, spec, workbook, errors, placeholders, dry_run
         print(f"  ! {warning}")
     for path in workspace.missing:
         print(f"  ! missing input: {path}")
+
+    if dry_run:
+        print()
+        print("  *** DRY RUN — no files were written. ***")
+        print("  To generate the workbook, run the same command without --dry-run:")
+        print(f"      {_run_command(workspace)}")
     print()
+
+
+def _run_command(workspace) -> str:
+    """The exact command that generates the workbook, for the closing hint."""
+    import os
+    return (f"python .github/skills/cr-estimate/scripts/cr_estimate.py "
+            f"{os.fspath(workspace.root)}")
+
+
+def cmd_doctor(args) -> int:
+    """Show what the parser actually found, per AC, so gaps are diagnosable."""
+    workspace = load_workspace(args.workspace, hld_path=args.hld, lld_path=args.lld)
+    rule = "-" * 78
+
+    print()
+    print(f"=== cr-estimate doctor — {workspace.root.name} ===")
+    for name in ("requirements-summary", "hld", "lld", "wbs"):
+        print(f"  {name:<21}: {workspace.sources.get(name, '(not found)')}")
+    print(rule)
+
+    tickets = workspace.requirements.tickets
+    if not tickets:
+        print("  requirements-summary.md yielded no tickets or ACs.")
+        print("  Expected '### <TICKET-KEY> — <summary>' then '- **AC-1** — ...' bullets.")
+        return 1
+
+    lld_ids = [ac.id for ac in workspace.lld.acs]
+    print(f"  ACs in requirements-summary.md : {sum(len(t.acs) for t in tickets)}")
+    print(f"  AC sections found in the LLD   : {len(lld_ids)}"
+          + (f"  ({', '.join(lld_ids[:12])}{' ...' if len(lld_ids) > 12 else ''})"
+             if lld_ids else ""))
+    print(rule)
+    print(f"  {'AC':<12} {'LLD §':<7} {'impact':>7} {'reuse':>6} {'screens':>8} "
+          f"{'endpts':>7} {'WBS':>5}")
+
+    gaps = 0
+    for ticket in tickets:
+        for ac in ticket.acs:
+            section = workspace.lld.ac(ac.id)
+            tasks = workspace.wbs.tasks_for(ac.id)
+            if section is None:
+                print(f"  {ac.id:<12} {'MISSING':<7} {'-':>7} {'-':>6} {'-':>8} "
+                      f"{'-':>7} {len(tasks):>5}")
+                gaps += 1
+                continue
+            if not section.impact:
+                gaps += 1
+            print(f"  {ac.id:<12} {'ok':<7} {len(section.impact):>7} "
+                  f"{len(section.reuse):>6} {len(section.screens):>8} "
+                  f"{len(section.endpoints):>7} {len(tasks):>5}")
+
+    print(rule)
+    if gaps:
+        print(f"  {gaps} AC(s) have no usable Impact Analysis, so their rows fall back")
+        print(f"  to a minimal flag. Two possible causes:")
+        print(f"    1. The LLD genuinely has no §x.3 table for that AC -- fill it in.")
+        print(f"    2. The heading does not match what the parser looks for:")
+        print(f"       an AC section is '## AC-1: <title>' and its table sits under")
+        print(f"       '### 1.3 Impact Analysis' with a Layer and an Impact column.")
+        print(f"  Check one AC that reports MISSING against a working one.")
+    else:
+        print("  Every AC has Impact Analysis rows. Complexity is fully derived.")
+    print()
+    return 0
 
 
 def cmd_rules(args) -> int:
@@ -152,6 +222,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--lld", help="Use this LLD instead of the auto-resolved latest.")
     run.set_defaults(func=cmd_estimate)
 
+    doctor = sub.add_parser(
+        "doctor", help="Show what was parsed from each artifact, per AC")
+    doctor.add_argument("workspace", help=".github/workspace/<batch-id>")
+    doctor.add_argument("--hld")
+    doctor.add_argument("--lld")
+    doctor.set_defaults(func=cmd_doctor)
+
     rules = sub.add_parser("rules", help="Print the mapping constants")
     rules.set_defaults(func=cmd_rules)
     return parser
@@ -160,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     # Allow `cr-estimate <workspace>` as shorthand for `cr-estimate run <workspace>`.
-    if argv and argv[0] not in {"run", "rules", "-h", "--help"}:
+    if argv and argv[0] not in {"run", "rules", "doctor", "-h", "--help"}:
         argv.insert(0, "run")
     args = build_parser().parse_args(argv)
     try:
