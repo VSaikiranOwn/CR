@@ -125,7 +125,19 @@ class TestWorkspaceLoading:
     def test_records_missing_artifacts_rather_than_raising(self, tmp_path):
         (tmp_path / "01-requirements").mkdir()
         workspace = load_workspace(tmp_path)
-        assert "02-design/wbs.md" in workspace.missing
+        assert "02-design/hld.md" in workspace.missing
+        assert "02-design/lld.md" in workspace.missing
+
+    def test_an_absent_wbs_is_not_an_error(self, tmp_path):
+        # The WBS is optional: without one, complexity comes from the LLD.
+        (tmp_path / "01-requirements").mkdir()
+        workspace = load_workspace(tmp_path)
+        assert "02-design/wbs.md" not in workspace.missing
+        assert workspace.has_wbs is False
+
+    def test_reports_which_document_each_section_came_from(self, workspace):
+        assert workspace.sources["hld"] == "02-design/hld.md"
+        assert workspace.sources["lld"] == "02-design/lld.md"
 
     def test_rejects_a_path_that_is_not_a_batch(self):
         with pytest.raises(NotADirectoryError):

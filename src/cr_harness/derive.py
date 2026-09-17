@@ -7,6 +7,7 @@ task id or an LLD table row, rather than taking the number on trust.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from cr_tool import constants as K
@@ -29,6 +30,52 @@ class Derivation:
     spec: dict
     evidence: list[Evidence] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    mode: str = "wbs"           # "wbs" or "lld"
+
+
+@dataclass
+class AcGroup:
+    """One Details row: an AC, or a run of sub-ACs sharing a major number."""
+    label: str
+    acs: list
+
+    @property
+    def ids(self) -> list[str]:
+        return [ac.id for ac in self.acs]
+
+    def requirement_text(self) -> str:
+        if len(self.acs) == 1:
+            return f"{self.acs[0].id} - {self.acs[0].text}"
+        joined = " ".join(f"({ac.id}) {ac.text}" for ac in self.acs)
+        return f"{self.label} - {joined}"
+
+
+AC_MAJOR = re.compile(r"AC-(\d+)")
+
+
+def group_acs(acs: list) -> list[AcGroup]:
+    """Fold AC-7.1 .. AC-7.7 into one row, the way the reference CRs are written.
+
+    A sheet with one row per sub-AC is unreadable and inflates the row count
+    without changing the work; the template groups closely related ACs.
+    """
+    groups: list[AcGroup] = []
+    for ac in acs:
+        match = AC_MAJOR.match(ac.id)
+        major = match.group(1) if match else ac.id
+        if groups and groups[-1].acs and _major_of(groups[-1].acs[0]) == major:
+            groups[-1].acs.append(ac)
+        else:
+            groups.append(AcGroup(label=ac.id, acs=[ac]))
+    for group in groups:
+        if len(group.acs) > 1:
+            group.label = f"{group.acs[0].id}-{group.acs[-1].id}"
+    return groups
+
+
+def _major_of(ac) -> str:
+    match = AC_MAJOR.match(ac.id)
+    return match.group(1) if match else ac.id
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +168,46 @@ def complexity_flags(tasks, evidence: list[Evidence], scope: str) -> dict[str, l
     return flags
 
 
+def impact_complexity_flags(impact_rows, evidence: list[Evidence],
+                            scope: str) -> dict[str, list[int]]:
+    """Complexity from lld.md x.3 Impact Analysis, when there is no WBS.
+
+    The Impact Analysis already names a layer and a Low/Med/High impact per
+    touched component -- the same shape as a WBS task size, so the same rule
+    applies: the highest impact in a layer sets the level, promoted one rung
+    when several components share that top impact.
+    """
+    flags = {dimension: [0, 0, 0] for dimension in K.DETAILS_DIMENSIONS}
+
+    by_dimension: dict[str, list] = {}
+    for row in impact_rows:
+        dimension = H.LLD_LAYER_TO_DIMENSION.get(row.layer.strip().lower())
+        complexity = H.IMPACT_TO_COMPLEXITY.get(row.impact.strip().lower())
+        if dimension is None or complexity is None:
+            continue
+        by_dimension.setdefault(dimension, []).append((complexity, row))
+
+    for dimension, entries in sorted(by_dimension.items()):
+        levels = [complexity for complexity, _ in entries]
+        base = max(levels, key=K.COMPLEXITIES.index)
+        promoted = False
+        if (levels.count(base) >= H.PROMOTE_AT_COUNT
+                and base != K.COMPLEXITIES[-1]):
+            base = K.COMPLEXITIES[K.COMPLEXITIES.index(base) + 1]
+            promoted = True
+
+        flags[dimension][K.COMPLEXITIES.index(base)] = 1
+        detail = ", ".join(f"{row.component}[{row.impact}]" for _, row in entries)
+        reason = f"{len(entries)} impact row(s): {detail}"
+        if promoted:
+            reason += f" -> promoted to {base}"
+        evidence.append(Evidence(
+            scope=scope, field=f"{dimension.upper()} complexity", value=base,
+            source=f"lld.md x.3 Impact Analysis -- {reason}", derived=True))
+
+    return flags
+
+
 # ---------------------------------------------------------------------------
 # Details sheet -- column D
 # ---------------------------------------------------------------------------
@@ -204,6 +291,88 @@ def technical_component(ac: AcSection | None, tasks, workspace: Workspace) -> st
     return "\n".join(blocks)
 
 
+def technical_component_from_lld(sections, flags: dict[str, list[int]]) -> str:
+    """Column D from the LLD alone: impact rows, screens, endpoints, BPM."""
+    def label(dimension: str) -> str:
+        counts = flags.get(dimension, [0, 0, 0])
+        for index, count in enumerate(counts):
+            if count:
+                return K.COMPLEXITIES[index].capitalize()
+        return ""
+
+    def impacts(*dimensions: str) -> list:
+        out = []
+        for section in sections:
+            for row in section.impact:
+                if H.LLD_LAYER_TO_DIMENSION.get(row.layer.strip().lower()) in dimensions:
+                    out.append(row)
+        return out
+
+    blocks: list[str] = []
+
+    if sum(flags.get("ui", [0, 0, 0])):
+        lines = [f"UI ({label('ui')})"]
+        components = sorted({c for s in sections for c in s.components})
+        screens = sorted({s2 for s in sections for s2 in s.screens})
+        if components:
+            lines.append("Components: " + ", ".join(components))
+        if screens:
+            lines.append("Screens: " + ", ".join(screens))
+        for row in impacts("ui"):
+            if row.change_required:
+                lines.append(f"- {row.component}: {row.change_required}")
+        blocks.append("\n".join(lines))
+
+    if sum(flags.get("ms", [0, 0, 0])):
+        services = sorted({row.component.split("/")[0].strip()
+                           for row in impacts("ms") if row.component})
+        header = f"MS ({label('ms')})"
+        if services:
+            header += " - " + ", ".join(services[:4])
+        lines = [header]
+        # Endpoint labels come from the x.4 reuse decisions, which state
+        # REUSE / EXTEND / NEW per candidate.
+        for section in sections:
+            for candidate in section.reuse:
+                if candidate.dimension() != "interface":
+                    continue
+                marker = H.DECISION_TO_LABEL.get(candidate.decision, candidate.decision)
+                if marker:
+                    lines.append(f"{marker}: {candidate.location or candidate.candidate}")
+        endpoints = sorted({e for s in sections for e in s.endpoints})
+        if endpoints and len(lines) == 1:
+            lines += [f"{H.TBD} NEW vs EXISTING: {e}" for e in endpoints]
+        for row in impacts("ms"):
+            if row.change_required:
+                lines.append(f"- {row.component}: {row.change_required}")
+        blocks.append("\n".join(lines))
+
+    if sum(flags.get("db", [0, 0, 0])):
+        lines = [f"DB ({label('db')}) - executed manually by DBA"]
+        for row in impacts("db"):
+            lines.append(f"- {row.component}: {row.change_required or 'change required'}")
+        lines.append("Physical names per the approved DCP Confluence Physical Data Model.")
+        blocks.append("\n".join(lines))
+
+    if sum(flags.get("bpm", [0, 0, 0])):
+        lines = [f"BPM ({label('bpm')}) - IBM BPM (manual handoff)"]
+        processes = sorted({s.bpm_process for s in sections if s.bpm_process})
+        if processes:
+            lines.append("Process: " + ", ".join(processes))
+        for row in impacts("bpm"):
+            lines.append(f"- {row.component}: {row.change_required or 'change required'}")
+        blocks.append("\n".join(lines))
+    elif any(s.no_bpm for s in sections):
+        blocks.append("BPM: none.")
+    else:
+        blocks.append(f"BPM: {H.TBD} confirm process impact.")
+
+    if not blocks:
+        return (f"{H.TBD} the LLD Impact Analysis lists no usable rows for this AC "
+                f"- technical analysis pending.")
+    return "\n".join(blocks)
+
+
 # ---------------------------------------------------------------------------
 # Tender Story Points -- reusability roll-up
 # ---------------------------------------------------------------------------
@@ -214,7 +383,8 @@ def reuse_levels(ticket: Ticket, workspace: Workspace,
     ac_ids = {ac.id for ac in ticket.acs}
     sections = [ac for ac in workspace.lld.acs if ac.id in ac_ids] or workspace.lld.acs
 
-    buckets: dict[str, list[int]] = {"frontend": [], "backend": [], "database": []}
+    buckets: dict[str, list[int]] = {
+        "frontend": [], "backend": [], "database": [], "interface": []}
     citations: dict[str, list[str]] = {k: [] for k in buckets}
 
     for section in sections:
@@ -225,20 +395,23 @@ def reuse_levels(ticket: Ticket, workspace: Workspace,
                 citations[dimension].append(
                     f"{section.id} {candidate.candidate} ({candidate.location})={candidate.level}")
 
-    # Interface comes from the WBS API Reuse Register, which is mandatory and
-    # states a decision for every capability considered.
+    # Interface: prefer the WBS API Reuse Register, which is mandatory and states
+    # a decision for every capability considered. Without a WBS, fall back to the
+    # endpoint-shaped candidates in x.4.
     story_tasks = {t.id for t in workspace.wbs.tasks if t.story_key in ticket.key
                    or ticket.key in t.story_key}
-    interface_rungs, interface_cites = [], []
+    register_rungs, register_cites = [], []
     for entry in workspace.wbs.api_register:
         if entry.decision and (not entry.wbs_ids or story_tasks & set(entry.wbs_ids)):
-            interface_rungs.append(H.DECISION_TO_RUNG[entry.decision])
-            interface_cites.append(f"{entry.capability}={entry.decision}")
-    buckets["interface"] = interface_rungs
-    citations["interface"] = interface_cites
+            register_rungs.append(H.DECISION_TO_RUNG[entry.decision])
+            register_cites.append(f"{entry.capability}={entry.decision}")
+    if register_rungs:
+        buckets["interface"] = register_rungs
+        citations["interface"] = register_cites
 
-    # QA is a proxy: a test slice on a REUSE task extends an existing test
-    # class; one on a NEW task means a new class.
+    # QA is a proxy. With a WBS: the reuse decision of each task carrying a test
+    # slice. Without one: the reuse decisions across all x.4 candidates, on the
+    # same logic -- mostly NEW work needs mostly new tests.
     qa_rungs, qa_cites = [], []
     for task in workspace.wbs.tasks:
         if task.id in story_tasks and task.test_slice:
@@ -246,6 +419,12 @@ def reuse_levels(ticket: Ticket, workspace: Workspace,
             if decision in H.QA_DECISION_TO_RUNG:
                 qa_rungs.append(H.QA_DECISION_TO_RUNG[decision])
                 qa_cites.append(f"{task.id}={decision}")
+    if not qa_rungs:
+        for section in sections:
+            for candidate in section.reuse:
+                if candidate.decision in H.QA_DECISION_TO_RUNG:
+                    qa_rungs.append(H.QA_DECISION_TO_RUNG[candidate.decision])
+                    qa_cites.append(f"{section.id} {candidate.candidate}={candidate.decision}")
     buckets["qa"] = qa_rungs
     citations["qa"] = qa_cites
 
@@ -329,15 +508,32 @@ def scope_assessment(ticket: Ticket, workspace: Workspace,
 # top level
 # ---------------------------------------------------------------------------
 
-def derive(workspace: Workspace) -> Derivation:
+def derive(workspace: Workspace, use_wbs: bool | None = None) -> Derivation:
+    """Build the CR spec from a batch.
+
+    `use_wbs=None` picks automatically: the WBS when the batch has one, the LLD
+    Impact Analysis when it does not.
+    """
     evidence: list[Evidence] = []
     notes: list[str] = []
+
+    if use_wbs is None:
+        use_wbs = workspace.has_wbs
+    mode = "wbs" if use_wbs else "lld"
+    if use_wbs and not workspace.has_wbs:
+        notes.append("--use-wbs was requested but wbs.md has no tasks; "
+                     "falling back to the LLD Impact Analysis.")
+        use_wbs, mode = False, "lld"
+    if not use_wbs:
+        notes.append("Complexity derived from lld.md x.3 Impact Analysis "
+                     "(Low/Med/High per layer), not from WBS task sizes.")
 
     tickets = workspace.requirements.tickets
     if not tickets:
         notes.append("requirements-summary.md lists no tickets with acceptance criteria; "
                      "no Details rows can be produced.")
-        return Derivation(spec={"rows": [], "stories": []}, evidence=evidence, notes=notes)
+        return Derivation(spec={"rows": [], "stories": []}, evidence=evidence,
+                          notes=notes, mode=mode)
 
     stories, rows = [], []
 
@@ -353,40 +549,56 @@ def derive(workspace: Workspace) -> Derivation:
         story_tasks = [t for t in workspace.wbs.tasks
                        if t.story_key in ticket.key or ticket.key in t.story_key]
 
-        for ac in ticket.acs:
-            tasks = [t for t in story_tasks if ac.id in t.ac_ids]
-            scope_label = f"{ticket.key} / {ac.id}"
-            if not tasks:
-                notes.append(f"{scope_label}: no WBS task references this AC; "
-                             f"row carries a {H.TBD} marker and a minimal flag.")
-            section = workspace.lld.ac(ac.id)
-            flags = complexity_flags(tasks, evidence, scope_label)
+        for group in group_acs(ticket.acs):
+            scope_label = f"{ticket.key} / {group.label}"
+            sections = [s for s in (workspace.lld.ac(i) for i in group.ids) if s]
+
+            if use_wbs:
+                tasks = [t for t in story_tasks if set(t.ac_ids) & set(group.ids)]
+                if not tasks:
+                    notes.append(f"{scope_label}: no WBS task references this AC.")
+                flags = complexity_flags(tasks, evidence, scope_label)
+                column_d = technical_component(sections[0] if sections else None,
+                                               tasks, workspace)
+            else:
+                impact_rows = [row for section in sections for row in section.impact]
+                if not impact_rows:
+                    notes.append(f"{scope_label}: the LLD has no Impact Analysis rows "
+                                 f"for this AC.")
+                flags = impact_complexity_flags(impact_rows, evidence, scope_label)
+                column_d = technical_component_from_lld(sections, flags)
+
             if not any(sum(v) for v in flags.values()):
                 flags["ms"] = [1, 0, 0]     # keep the row non-zero and visible
+                column_d = f"{H.TBD} complexity unresolved.\n" + column_d
+
             rows.append({
                 "user_story": ticket.key,
-                "business_requirement": f"{ac.id} - {ac.text}",
-                "technical_component": technical_component(section, tasks, workspace),
+                "business_requirement": group.requirement_text(),
+                "technical_component": column_d,
                 **flags,
             })
 
-        orphans = [t for t in story_tasks if not t.ac_ids and t.dimension]
-        if orphans:
-            shared_flags = complexity_flags(orphans, evidence, f"{ticket.key} / Shared")
-            rows.append({
-                "user_story": "Shared",
-                "group": ticket.key,
-                "business_requirement": "Cross-cutting tasks not tied to a single AC "
-                                        "(data model, access control, audit, coordination).",
-                "technical_component": technical_component(None, orphans, workspace),
-                **shared_flags,
-            })
+        if use_wbs:
+            orphans = [t for t in story_tasks if not t.ac_ids and t.dimension]
+            if orphans:
+                shared_flags = complexity_flags(orphans, evidence, f"{ticket.key} / Shared")
+                rows.append({
+                    "user_story": "Shared",
+                    "group": ticket.key,
+                    "business_requirement": "Cross-cutting tasks not tied to a single AC "
+                                            "(data model, access control, audit, coordination).",
+                    "technical_component": technical_component(None, orphans, workspace),
+                    **shared_flags,
+                })
 
     return Derivation(
         spec={
             "meta": {
                 "batch": workspace.root.name,
-                "source": "Derived from 01-requirements/ and 02-design/ by cr-estimate.",
+                "source": f"Derived from {', '.join(sorted(workspace.sources.values()))} "
+                          f"by cr-estimate ({mode} mode).",
+                "mode": mode,
                 "graphify_generated": workspace.graphify_generated,
             },
             "stories": stories,
@@ -394,4 +606,5 @@ def derive(workspace: Workspace) -> Derivation:
         },
         evidence=evidence,
         notes=notes,
+        mode=mode,
     )

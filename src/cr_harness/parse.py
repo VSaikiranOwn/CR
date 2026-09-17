@@ -555,6 +555,39 @@ def _integration_items(body: str) -> list[str]:
 # workspace loading
 # ---------------------------------------------------------------------------
 
+VERSIONED = re.compile(r"^(?P<stem>hld|lld)-v(?P<version>\d+)\.md$", re.I)
+
+
+def resolve_design_doc(root: Path, stem: str) -> Path | None:
+    """Find the document to use for `hld` or `lld`.
+
+    Batches keep numbered snapshots in `02-design/versions/` alongside a working
+    `02-design/<stem>.md`. The highest version number always wins.
+
+    Deliberately NOT modification time: mtimes do not survive a copy, a fresh
+    clone or an unzip, so a timestamp rule silently picks the wrong document
+    depending on how the batch reached the machine. The version number is
+    written by whoever authored the snapshot and travels with the file.
+    Override with --hld / --lld when you need a specific one.
+    """
+    design = root / H.DESIGN_DIR
+    plain = design / f"{stem}.md"
+
+    newest_version: tuple[int, Path] | None = None
+    versions = root / H.VERSIONS_DIR
+    if versions.is_dir():
+        for path in versions.iterdir():
+            match = VERSIONED.match(path.name)
+            if match and match.group("stem").lower() == stem:
+                candidate = (int(match.group("version")), path)
+                if newest_version is None or candidate[0] > newest_version[0]:
+                    newest_version = candidate
+
+    if newest_version is not None:
+        return newest_version[1]
+    return plain if plain.is_file() else None
+
+
 @dataclass
 class Workspace:
     root: Path
@@ -564,29 +597,50 @@ class Workspace:
     wbs: Wbs
     missing: list[str] = field(default_factory=list)
     graphify_generated: str | None = None
+    sources: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def has_wbs(self) -> bool:
+        return bool(self.wbs.tasks)
 
 
-def load_workspace(root: str | Path) -> Workspace:
+def load_workspace(root: str | Path, hld_path: str | Path | None = None,
+                   lld_path: str | Path | None = None) -> Workspace:
     root = Path(root)
     if not root.is_dir():
         raise NotADirectoryError(f"Batch workspace not found: {root}")
 
     missing: list[str] = []
+    sources: dict[str, str] = {}
 
     def read(relative: str) -> str:
         path = root / relative
         if not path.is_file():
             missing.append(relative)
             return ""
+        sources[Path(relative).stem] = relative
+        return path.read_text(encoding="utf-8")
+
+    def read_design(stem: str, override: str | Path | None) -> str:
+        path = Path(override) if override else resolve_design_doc(root, stem)
+        if path is None or not path.is_file():
+            missing.append(f"{H.DESIGN_DIR}/{stem}.md")
+            return ""
+        try:
+            shown = path.relative_to(root).as_posix()
+        except ValueError:
+            shown = str(path)
+        sources[stem] = shown
         return path.read_text(encoding="utf-8")
 
     workspace = Workspace(
         root=root,
         requirements=parse_requirements(read(H.REQUIREMENTS_SUMMARY)),
-        hld=parse_hld(read(H.HLD)),
-        lld=parse_lld(read(H.LLD)),
-        wbs=parse_wbs(read(H.WBS)),
+        hld=parse_hld(read_design("hld", hld_path)),
+        lld=parse_lld(read_design("lld", lld_path)),
+        wbs=parse_wbs(read(H.WBS) if (root / H.WBS).is_file() else ""),
         missing=missing,
+        sources=sources,
     )
 
     graphify = root / H.GRAPHIFY_DIR

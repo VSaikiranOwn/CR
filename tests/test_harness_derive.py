@@ -183,3 +183,129 @@ class TestValidator:
         assert result.returncode == 1
         assert "no Tender Story Points row" in result.stdout
         assert "no Details row estimates it" in result.stdout
+
+
+FIXTURE_41000 = "tests/fixtures/batch-41000"
+
+
+class TestAcGrouping:
+    def test_sub_acs_fold_into_one_row(self):
+        from cr_harness.derive import group_acs
+        from cr_harness.parse import AcceptanceCriterion as AC
+        groups = group_acs([AC("AC-1", "a"), AC("AC-1.1", "b"), AC("AC-2", "c")])
+        assert [g.label for g in groups] == ["AC-1-AC-1.1", "AC-2"]
+
+    def test_a_long_run_is_labelled_by_its_endpoints(self):
+        from cr_harness.derive import group_acs
+        from cr_harness.parse import AcceptanceCriterion as AC
+        groups = group_acs([AC(f"AC-7.{n}", "x") for n in range(1, 8)])
+        assert [g.label for g in groups] == ["AC-7.1-AC-7.7"]
+
+    def test_flat_acs_are_untouched(self):
+        from cr_harness.derive import group_acs
+        from cr_harness.parse import AcceptanceCriterion as AC
+        groups = group_acs([AC("AC-1", "a"), AC("AC-2", "b"), AC("AC-3", "c")])
+        assert [g.label for g in groups] == ["AC-1", "AC-2", "AC-3"]
+
+    def test_the_row_text_names_every_ac_it_covers(self):
+        from cr_harness.derive import group_acs
+        from cr_harness.parse import AcceptanceCriterion as AC
+        text = group_acs([AC("AC-1", "first"), AC("AC-1.1", "second")])[0].requirement_text()
+        assert "(AC-1) first" in text and "(AC-1.1) second" in text
+
+
+class TestVersionResolution:
+    def test_picks_the_highest_version(self):
+        workspace = load_workspace(FIXTURE_41000)
+        assert workspace.sources["hld"].endswith("versions/hld-v5.md")
+        assert workspace.sources["lld"].endswith("versions/lld-v4.md")
+
+    def test_the_version_number_beats_modification_time(self, tmp_path):
+        # mtimes do not survive a copy or a clone, so they must not decide this.
+        import os, shutil, time
+        from cr_harness.parse import resolve_design_doc
+        batch = tmp_path / "b"
+        shutil.copytree(FIXTURE_41000, batch)
+        plain = batch / "02-design" / "hld.md"
+        now = time.time()
+        os.utime(plain, (now, now))
+        assert resolve_design_doc(batch, "hld").name == "hld-v5.md"
+
+    def test_survives_a_copy_that_resets_timestamps(self, tmp_path):
+        import shutil
+        from cr_harness.parse import load_workspace as load
+        batch = tmp_path / "copied"
+        shutil.copytree(FIXTURE_41000, batch)
+        assert load(batch).sources["lld"].endswith("versions/lld-v4.md")
+
+    def test_falls_back_to_the_plain_file_with_no_versions_folder(self):
+        from cr_harness.parse import resolve_design_doc
+        from pathlib import Path
+        assert resolve_design_doc(Path(FIXTURE), "hld").name == "hld.md"
+
+    def test_an_explicit_override_wins(self):
+        workspace = load_workspace(
+            FIXTURE_41000, hld_path=f"{FIXTURE_41000}/02-design/versions/hld-v2.md")
+        assert workspace.sources["hld"].endswith("hld-v2.md")
+
+
+class TestLldOnlyMode:
+    def test_selected_automatically_when_there_is_no_wbs(self):
+        derivation = derive(load_workspace(FIXTURE_41000))
+        assert derivation.mode == "lld"
+        assert any("Impact Analysis" in note for note in derivation.notes)
+
+    def test_impact_levels_map_onto_complexity(self):
+        from cr_harness.derive import impact_complexity_flags
+        from cr_harness.parse import ImpactRow
+        rows = [ImpactRow("Backend", "svc", "High", "x"),
+                ImpactRow("Frontend", "cmp", "Low", "y"),
+                ImpactRow("Database", "tbl", "Medium", "z")]
+        flags = impact_complexity_flags(rows, [], "x")
+        assert flags["ms"] == [0, 0, 1]
+        assert flags["ui"] == [1, 0, 0]
+        assert flags["db"] == [0, 1, 0]
+
+    def test_integration_rows_count_as_backend(self):
+        from cr_harness.derive import impact_complexity_flags
+        from cr_harness.parse import ImpactRow
+        flags = impact_complexity_flags([ImpactRow("Integration", "UOB", "High", "x")], [], "s")
+        assert flags["ms"] == [0, 0, 1]
+
+    def test_unparsable_impact_is_skipped_not_guessed(self):
+        from cr_harness.derive import impact_complexity_flags
+        from cr_harness.parse import ImpactRow
+        # The unfilled template literally contains "High/Medium/Low".
+        flags = impact_complexity_flags([ImpactRow("Backend", "x", "High/Medium/Low", "")], [], "s")
+        assert all(sum(v) == 0 for v in flags.values())
+
+    def test_rows_get_real_differentiated_effort(self):
+        from cr_tool.compute import row_dev_effort
+        spec = parse_spec(derive(load_workspace(FIXTURE_41000)).spec)
+        efforts = [row_dev_effort(r) for r in spec.rows]
+        # The bug this replaces produced an identical 2 MD on every row.
+        assert len(set(efforts)) > 1
+        assert min(efforts) >= 2
+
+    def test_column_d_still_labels_endpoints_and_bpm(self):
+        derivation = derive(load_workspace(FIXTURE_41000))
+        blob = "\n".join(r["technical_component"] for r in derivation.spec["rows"])
+        assert "EXISTING to REUSE/CHECK:" in blob
+        assert "EXISTING to MODIFY:" in blob
+        assert "BPM: none." in blob
+        assert "approved DCP Confluence Physical Data Model" in blob
+
+    def test_interface_and_qa_reuse_survive_without_a_wbs(self):
+        derivation = derive(load_workspace(FIXTURE_41000))
+        reuse = derivation.spec["stories"][0]["reusability"]
+        assert reuse["interface"]["level"] != "Not Applicable"
+        assert reuse["qa"]["level"] != "Not Applicable"
+
+    def test_no_wbs_flag_forces_the_mode_even_when_a_wbs_exists(self):
+        derivation = derive(load_workspace(FIXTURE), use_wbs=False)
+        assert derivation.mode == "lld"
+
+    def test_requesting_wbs_without_one_falls_back_and_says_so(self):
+        derivation = derive(load_workspace(FIXTURE_41000), use_wbs=True)
+        assert derivation.mode == "lld"
+        assert any("falling back" in note for note in derivation.notes)

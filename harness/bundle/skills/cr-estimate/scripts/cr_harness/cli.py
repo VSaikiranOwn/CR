@@ -24,8 +24,13 @@ from .parse import load_workspace
 
 
 def cmd_estimate(args) -> int:
-    workspace = load_workspace(args.workspace)
-    derivation = derive(workspace)
+    workspace = load_workspace(args.workspace, hld_path=args.hld, lld_path=args.lld)
+    use_wbs = None
+    if args.no_wbs:
+        use_wbs = False
+    elif args.use_wbs:
+        use_wbs = True
+    derivation = derive(workspace, use_wbs=use_wbs)
 
     if not derivation.spec["rows"]:
         print("ERROR: nothing to estimate.", file=sys.stderr)
@@ -64,6 +69,11 @@ def _report(workspace, derivation, spec, workbook, errors, placeholders, dry_run
     print()
     print(f"=== CR estimate — {workspace.root.name} ==="
           + ("  [dry run, nothing written]" if dry_run else ""))
+    source = {"wbs": "wbs.md task sizes", "lld": "lld.md x.3 Impact Analysis"}[derivation.mode]
+    print(f"  Complexity from : {source}")
+    for name in ("requirements-summary", "hld", "lld", "wbs"):
+        if name in workspace.sources:
+            print(f"  {name:<15} : {workspace.sources[name]}")
     print(f"  Details rows : {len(spec.rows)}")
     print(f"  Stories      : {len(spec.stories)}")
     print(rule)
@@ -134,6 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Estimate a batch workspace")
     run.add_argument("workspace", help=".github/workspace/<batch-id>")
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--no-wbs", action="store_true",
+                     help="Ignore wbs.md; take complexity from the LLD Impact Analysis.")
+    run.add_argument("--use-wbs", action="store_true",
+                     help="Require wbs.md task sizes (the default when a WBS exists).")
+    run.add_argument("--hld", help="Use this HLD instead of the auto-resolved latest.")
+    run.add_argument("--lld", help="Use this LLD instead of the auto-resolved latest.")
     run.set_defaults(func=cmd_estimate)
 
     rules = sub.add_parser("rules", help="Print the mapping constants")

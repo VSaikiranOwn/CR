@@ -26,9 +26,42 @@ never adjust the spreadsheet.
 
 ## Position in the pipeline
 
-Step 6.5 of `design-agent`: after `wbs-author` writes `02-design/wbs.md`, before
-the stage-2 gate. It reads only stages 01 and 02 and writes only into
+Step 6.5 of `design-agent`: after `lld-author`, and after `wbs-author` when the
+batch gets that far. It reads only stages 01 and 02 and writes only into
 `02-design/`, so the workspace contract holds.
+
+## Two modes
+
+The skill picks automatically:
+
+| Batch has | Mode | Complexity comes from |
+|---|---|---|
+| `wbs.md` with tasks | **wbs** | each task's layer + declared `[S/M/L]` |
+| no `wbs.md` | **lld** | `lld.md` §x.3 Impact Analysis — layer + Low/Med/High |
+
+Both modes read reuse levels from `lld.md` §x.4 and scope from §x.2 / §x.6 and
+`hld.md` §8, so the Tender Story Points sheet is filled either way. The printed
+report always names the mode and the exact files used.
+
+Force a mode with `--no-wbs` or `--use-wbs`.
+
+## Which HLD and LLD it reads
+
+Batches keep numbered snapshots in `02-design/versions/`. The skill takes the
+**highest** `hld-vN.md` / `lld-vN.md` whenever that folder has any, and falls
+back to `02-design/hld.md` / `lld.md` otherwise. It does not look at
+modification times — those do not survive a copy or a fresh clone, so they
+would pick a different document depending on how the batch reached the machine.
+
+The report names the file it used every run. If the working copy is the one you
+want, pass it: `--lld 02-design/lld.md`.
+
+## One Details row per AC group
+
+Sub-ACs sharing a major number are folded into a single row: `AC-7.1` through
+`AC-7.7` become one row labelled `AC-7.1-AC-7.7`. This matches how the reference
+CRs are written; a row per sub-AC is unreadable and inflates the row count
+without changing the work.
 
 ## Boundaries
 
@@ -41,8 +74,9 @@ what was decided.
 
 ## Workflow
 
-1. Confirm `02-design/wbs.md` exists and is confirmed. If it does not, stop and
-   say the WBS must be generated first.
+1. Confirm `02-design/lld.md` (or a `versions/lld-vN.md`) exists and is
+   confirmed. The WBS is optional — without it the skill uses the LLD Impact
+   Analysis and says so.
 2. Run the skill:
    ```bash
    python3 .github/skills/cr-estimate/scripts/cr_estimate.py \
@@ -52,9 +86,10 @@ what was decided.
 3. Read the printed report. Resolve, in this order:
    - **Formula errors** — must be `none`. Anything else is a defect, stop.
    - **Missing inputs** — a required artifact was absent; the sheet will be thin.
-   - **Notes** — usually an AC with no WBS task referencing it. That is a
-     traceability gap in the WBS (`Every AC-* maps to one or more WBS-*`), so
-     fix `wbs.md` and re-run rather than accepting the `[TBD]` row.
+   - **Notes** — in wbs mode, an AC with no WBS task is a traceability gap
+     (`Every AC-* maps to one or more WBS-*`), so fix `wbs.md` and re-run rather
+     than accepting the `[TBD]` row. In lld mode, an AC with no Impact Analysis
+     rows means §x.3 was left unfilled for that AC; fill it and re-run.
    - **Warnings** — a row over 10 MD or carrying more than 3 flags.
 4. Open `02-design/cr/cr-evidence.md` and walk its Review checklist. The three
    Scope Assessment columns are drafts: they are marked
@@ -69,19 +104,23 @@ what was decided.
 
 ## What drives each number
 
-| CR field | Source |
-|---|---|
-| Details row (one per AC) | `requirements-summary.md` ACs |
-| Business Requirement (col C) | the AC text, verbatim |
-| Technical Component(s) (col D) | `wbs.md` §2.1 API Reuse Register + `lld.md` §x.6/§x.7/§x.8 |
-| UI / MS / DB / BPM complexity | `wbs.md` task layer + its `[S/M/L]` |
-| Reuse: Frontend / Backend / Database | `lld.md` §x.4 candidate levels, averaged |
-| Reuse: Interface | `wbs.md` §2.1 decisions (REUSE=4, EXTEND=2, NEW=0) |
-| Reuse: QA | proxy — reuse decision of each task carrying a TS-* slice |
-| Scope: Interaction / Pages / Integration | `lld.md` §x.2 and §x.6, `hld.md` §8 |
+| CR field | wbs mode | lld mode |
+|---|---|---|
+| Details row (one per AC group) | `requirements-summary.md` ACs | same |
+| Business Requirement (col C) | the AC text, verbatim | same |
+| Technical Component(s) (col D) | `wbs.md` §2.1 register + `lld.md` §x.6/§x.7/§x.8 | `lld.md` §x.3 change-required + §x.4/§x.6/§x.8 |
+| UI / MS / DB / BPM complexity | task layer + `[S/M/L]` | §x.3 layer + Low/Med/High |
+| Reuse: Frontend / Backend / Database | `lld.md` §x.4 levels, averaged | same |
+| Reuse: Interface | `wbs.md` §2.1 decisions | §x.4 endpoint candidates |
+| Reuse: QA | decision of each task with a TS-* slice | decisions across all §x.4 candidates |
+| Scope: Interaction / Pages / Integration | `lld.md` §x.2 and §x.6, `hld.md` §8 | same |
+
+In lld mode, §x.3 layers map on: `Frontend→UI`, `Backend→MS`,
+`Integration→MS`, `Access Control→MS`, `Database→DB`, `BPM→BPM`.
 
 `DOCS` tasks produce no complexity flag: documentation effort is already inside
 the Requirement & Design ratio. QA likewise has no flag — it is the 40% ratio.
+The sheet has no Integration column, so integration work counts as MS.
 
 Print the full mapping, including the calibration thresholds, with:
 

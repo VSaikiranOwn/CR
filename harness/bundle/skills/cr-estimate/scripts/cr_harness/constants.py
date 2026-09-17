@@ -39,6 +39,29 @@ SIZE_TO_COMPLEXITY = {"S": "simple", "M": "medium", "L": "complex"}
 PROMOTE_AT_COUNT = 3
 
 # --------------------------------------------------------------------------
+# LLD-only mode: complexity from section x.3 Impact Analysis
+# --------------------------------------------------------------------------
+# When there is no wbs.md, the per-AC Impact Analysis table is the best
+# available signal: it already states a layer and a Low/Med/High impact per
+# touched component, which is the same shape as a task size.
+IMPACT_TO_COMPLEXITY = {
+    "low": "simple",
+    "medium": "medium", "med": "medium", "moderate": "medium",
+    "high": "complex",
+}
+
+# lld.md x.3 / Changes Summary layer names -> CR sheet dimension.
+# Integration and Access Control are backend work; the sheet has no column of
+# their own for them.
+LLD_LAYER_TO_DIMENSION = {
+    "frontend": "ui", "fe": "ui", "ui": "ui",
+    "backend": "ms", "be": "ms", "microservice": "ms", "service": "ms",
+    "integration": "ms", "access control": "ms", "security": "ms",
+    "database": "db", "db": "db", "data": "db",
+    "bpm": "bpm", "workflow": "bpm",
+}
+
+# --------------------------------------------------------------------------
 # Reuse levels -- the CR ladder, which lld.md section x.4 already uses
 # --------------------------------------------------------------------------
 REUSE_RUNGS = (0, 1, 2, 4)
@@ -98,6 +121,8 @@ DECISION_TO_LABEL = {
 # Harness workspace layout
 # --------------------------------------------------------------------------
 REQUIREMENTS_SUMMARY = "01-requirements/requirements-summary.md"
+DESIGN_DIR = "02-design"
+VERSIONS_DIR = "02-design/versions"
 HLD = "02-design/hld.md"
 LLD = "02-design/lld.md"
 WBS = "02-design/wbs.md"
