@@ -6,26 +6,47 @@ have. No existing skill, agent or stage changes behaviour.
 
 ---
 
-## Quickstart (Windows / PowerShell)
+## Quickstart
 
 Assuming the harness workspace is `C:\Microservices\Workspace\aiv2` — swap in
 your own path if it differs.
 
-### The one-command way
+### Just run the installer
 
-If the terminal is eating characters off pasted lines, this is one line with no
-shell variables to lose:
+From the root of this cloned repo. It finds the harness on its own if the clone
+sits inside it (the usual case), copies both paths, sorts out `openpyxl`, and
+with a batch id runs a dry-run estimate as a smoke test.
 
-```powershell
-.\harness\Install-CrEstimate.ps1 -HarnessRoot "C:\Microservices\Workspace\aiv2" -Batch 41000
+**cmd / VS Code terminal** — or double-click it in Explorer:
+
+```
+install-cr-estimate.bat
 ```
 
-Run it from the root of this cloned repo. It checks the bundle is present and
-the target really is the harness, copies both paths, makes sure `openpyxl` is
-installed, and (with `-Batch`) runs a dry-run estimate as a smoke test.
+**Git Bash / WSL / macOS / Linux:**
 
-If PowerShell refuses to run it: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`,
-or run `powershell -ExecutionPolicy Bypass -File .\harness\Install-CrEstimate.ps1 -HarnessRoot "C:\Microservices\Workspace\aiv2"`.
+```bash
+./install-cr-estimate.sh
+```
+
+Add a batch id to smoke-test straight away:
+
+```
+install-cr-estimate.bat "" 41000
+./install-cr-estimate.sh "" 41000
+```
+
+If the clone is somewhere else, pass the harness folder explicitly:
+
+```
+install-cr-estimate.bat "C:\Microservices\Workspace\aiv2" 41000
+./install-cr-estimate.sh /c/Microservices/Workspace/aiv2 41000
+```
+
+Both are safe to re-run; an existing `cr-estimate` skill is replaced.
+
+There is also `harness/Install-CrEstimate.ps1` for PowerShell, which takes
+`-HarnessRoot` and `-Batch`.
 
 ### The manual way
 

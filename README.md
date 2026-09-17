@@ -24,6 +24,7 @@ and rebuild, you never touch the workbook.
 | **You supply** | a folder of Figma PNG/PDF, stories, HLD, LLD | nothing — it reads the batch |
 | **Copilot's job** | read it all and write the spec | none; the mapping is deterministic |
 | **Run it with** | `cr-tool build <spec>` | `/cr-estimate`, or one `cr_estimate.py` command |
+| **Install** | `pip install -e .` | `install-cr-estimate.bat` or `./install-cr-estimate.sh` |
 | **Read** | [QUICKSTART.md](QUICKSTART.md) | **[harness/INSTALL.md](harness/INSTALL.md)** |
 
 If you already run the four-stage harness, **Mode B is the one you want** — it
