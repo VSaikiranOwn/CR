@@ -16,15 +16,19 @@ inputs/                                       output/
 the middle is the reviewable artefact: if a number looks wrong, you fix the spec
 and rebuild, you never touch the workbook.
 
-Two ways to run it:
+**Two modes. Pick one — you do not need both.**
 
-- **Standalone** — you drive it from GitHub Copilot with a folder of Figma
-  exports, stories, HLD and LLD. Start at [QUICKSTART.md](QUICKSTART.md).
-- **Inside the DCP AI harness** — `/cr-estimate` becomes a design-agent skill
-  that derives the CR from the batch's own `02-design/` artifacts, with an
-  evidence trail. See [harness/INSTALL.md](harness/INSTALL.md).
+| | Mode A — standalone | Mode B — inside the DCP AI harness |
+|---|---|---|
+| **Use when** | there is no HLD/LLD/WBS; you have loose docs and Figma exports | the batch already has `02-design/` |
+| **You supply** | a folder of Figma PNG/PDF, stories, HLD, LLD | nothing — it reads the batch |
+| **Copilot's job** | read it all and write the spec | none; the mapping is deterministic |
+| **Run it with** | `cr-tool build <spec>` | `/cr-estimate`, or one `cr_estimate.py` command |
+| **Read** | [QUICKSTART.md](QUICKSTART.md) | **[harness/INSTALL.md](harness/INSTALL.md)** |
 
-**New here? Read [QUICKSTART.md](QUICKSTART.md)** — where to clone, where your CR
+If you already run the four-stage harness, **Mode B is the one you want** — it
+derives the estimate from your own signed-off design instead of re-reading
+documents, and writes an evidence trail alongside the workbook. — where to clone, where your CR
 files go, and how to drive it from Copilot, step by step.
 
 ---

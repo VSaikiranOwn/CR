@@ -4,17 +4,56 @@ Adds a CR estimation step to the existing four-stage harness. It is **additive**
 one new skill, one new validator, and three small edits to files you already
 have. No existing skill, agent or stage changes behaviour.
 
-## 1. Build the bundle
+---
 
-```bash
-python tools/build_harness_bundle.py          # writes dist/harness/
+## Quickstart (Windows / PowerShell)
+
+Assuming the harness workspace is `C:\Microservices\Workspace\aiv2` — adjust
+`$Aiv2` if yours differs.
+
+```powershell
+$Aiv2 = "C:\Microservices\Workspace\aiv2"
+
+# 1. get the bundle (anywhere outside the harness)
+git clone https://github.com/VSaikiranOwn/CR.git $env:TEMP\cr-tool
+cd $env:TEMP\cr-tool
+git checkout claude/cr-generation-utility-s8sfrz
+
+# 2. copy the skill and the validator in
+Copy-Item -Recurse -Force harness\bundle\skills\cr-estimate "$Aiv2\.github\skills\"
+Copy-Item -Force harness\bundle\validators\cr_complete.py "$Aiv2\.github\validators\"
+
+# 3. dependency (skip if openpyxl is already installed)
+pip install openpyxl
+
+# 4. smoke test against a batch that already has a WBS
+cd $Aiv2
+python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\<batch-id> --dry-run
 ```
 
-## 2. Copy it in
+Then make the three edits in section 3 below, and you are done. Per batch after
+that it is one command, or `/cr-estimate` in Copilot Chat with `design-agent`
+selected.
+
+> Use `python` or `python3`, whichever your harness already uses for
+> `run-all.py`.
+
+---
+
+## 1. The bundle
+
+It is committed at `harness/bundle/`, so there is nothing to build. If you have
+changed anything under `src/`, regenerate it first:
 
 ```bash
-cp -r dist/harness/skills/cr-estimate   <harness-repo>/.github/skills/
-cp    dist/harness/validators/cr_complete.py <harness-repo>/.github/validators/
+python tools/build_harness_bundle.py
+```
+
+## 2. Copy it in (macOS / Linux)
+
+```bash
+cp -r harness/bundle/skills/cr-estimate       <harness-repo>/.github/skills/
+cp    harness/bundle/validators/cr_complete.py <harness-repo>/.github/validators/
 ```
 
 Resulting layout:
@@ -34,12 +73,30 @@ Resulting layout:
 Only dependency is `openpyxl`, which the harness already needs for nothing else —
 if it is not present: `pip install openpyxl`.
 
-Smoke test against any batch that has a WBS:
+## 2b. Running it, per batch
 
-```bash
-python3 .github/skills/cr-estimate/scripts/cr_estimate.py \
-        .github/workspace/<batch-id> --dry-run
+Two equivalent ways — the skill is the same code either way:
+
+```powershell
+# from the terminal
+python .github\skills\cr-estimate\scripts\cr_estimate.py .github\workspace\41000
 ```
+
+or in Copilot Chat with `design-agent` selected:
+
+```
+/cr-estimate    then: "batch 41000"
+```
+
+Outputs land in `.github/workspace/41000/02-design/cr/`:
+
+| File | What it is |
+|---|---|
+| `41000-CR-Estimation.xlsx` | the deliverable |
+| `cr-spec.json` | the reviewable input — fix numbers here, never in the .xlsx |
+| `cr-evidence.md` | every flag traced to the WBS task / LLD row that set it |
+
+Add `--dry-run` to see the totals without writing anything.
 
 ## 3. Three edits to existing files
 

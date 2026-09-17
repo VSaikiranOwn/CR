@@ -4,13 +4,14 @@
 Produces `dist/harness/` laid out exactly as it must sit inside the harness
 repo's `.github/`, so installing is a copy rather than a merge:
 
-    dist/harness/
+    harness/bundle/
       skills/cr-estimate/{SKILL.md,scripts/,assets/,references/}
       validators/cr_complete.py
 
-Run after changing anything under `src/`, then copy into the harness repo.
+The bundle is committed, so installing into the harness is a copy rather than a
+build. Re-run this after changing anything under `src/` and commit the result.
 
-Usage:  python tools/build_harness_bundle.py [dist/harness]
+Usage:  python tools/build_harness_bundle.py [harness/bundle]
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DEST = ROOT / "dist" / "harness"
+DEFAULT_DEST = ROOT / "harness" / "bundle"
 
 ENTRY_POINT = '''#!/usr/bin/env python3
 """Entry point for the cr-estimate skill.
